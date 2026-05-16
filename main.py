@@ -12,6 +12,7 @@ def main():
     logger.info("=" * 50)
 
     app = QApplication(sys.argv)
+    app.setStyle("Fusion")
     app.setApplicationName("AgentPiro")
 
     window = AgentPiroGUI()

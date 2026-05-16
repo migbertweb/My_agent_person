@@ -1,10 +1,12 @@
 import sys
 import time
+from pathlib import Path
 from PySide6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                                 QTextEdit, QLineEdit, QPushButton, QLabel,
-                                QMenuBar, QMenu, QMessageBox, QScrollBar)
+                                QMenuBar, QMenu, QScrollBar, QSystemTrayIcon,
+                                QDialog, QDialogButtonBox, QApplication)
 from PySide6.QtCore import Qt, QThread, Signal, QTimer
-from PySide6.QtGui import QAction, QTextCursor
+from PySide6.QtGui import QAction, QTextCursor, QIcon, QPixmap, QPainter, QFont
 
 from core.brain import AgentPiro
 from core.memory import Memory
@@ -87,6 +89,7 @@ class AgentPiroGUI(QMainWindow):
         self.resize(800, 600)
 
         self.setStyleSheet(DARK_THEME)
+        self.setWindowIcon(self._get_app_icon())
 
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
@@ -131,6 +134,12 @@ class AgentPiroGUI(QMainWindow):
         self.input_field.textChanged.connect(self._on_text_changed)
         input_layout.addWidget(self.input_field, 1)
 
+        self.mute_button = QPushButton("🔊")
+        self.mute_button.setObjectName("muteButton")
+        self.mute_button.setFixedWidth(50)
+        self.mute_button.clicked.connect(self.toggle_tts)
+        input_layout.addWidget(self.mute_button)
+
         self.send_button = QPushButton("Enviar")
         self.send_button.setObjectName("sendButton")
         self.send_button.clicked.connect(self.send_message)
@@ -139,8 +148,55 @@ class AgentPiroGUI(QMainWindow):
         main_layout.addWidget(input_container)
 
         self.create_menu()
+        self.create_tray_icon()
         self.append_message("system", f"Hola, soy {AGENT_NAME}. ¿En qué puedo ayudarte?")
         self.input_field.setFocus()
+
+    def _get_app_icon(self):
+        icon_path = Path(__file__).resolve().parent.parent / "agentpiro.png"
+        if icon_path.exists():
+            return QIcon(str(icon_path))
+        pixmap = QPixmap(64, 64)
+        pixmap.fill(Qt.transparent)
+        painter = QPainter(pixmap)
+        painter.setRenderHint(QPainter.Antialiasing)
+        painter.setBrush(Qt.NoBrush)
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(Qt.darkCyan)
+        painter.drawRoundedRect(2, 2, 60, 60, 12, 12)
+        painter.setPen(Qt.white)
+        font = QFont("Segoe UI", 28, QFont.Bold)
+        painter.setFont(font)
+        painter.drawText(pixmap.rect(), Qt.AlignCenter, "AP")
+        painter.end()
+        return QIcon(pixmap)
+
+    def create_tray_icon(self):
+        self.tray_icon = QSystemTrayIcon(self._get_app_icon(), self)
+        self.tray_icon.setToolTip(AGENT_NAME)
+
+        tray_menu = QMenu()
+        show_action = tray_menu.addAction("Mostrar/Ocultar")
+        show_action.triggered.connect(self.toggle_visibility)
+        tray_menu.addSeparator()
+        quit_action = tray_menu.addAction("Salir")
+        quit_action.triggered.connect(self.quit_app)
+
+        self.tray_icon.setContextMenu(tray_menu)
+        self.tray_icon.activated.connect(self._on_tray_activated)
+        self.tray_icon.show()
+
+    def _on_tray_activated(self, reason):
+        if reason == QSystemTrayIcon.ActivationReason.DoubleClick:
+            self.toggle_visibility()
+
+    def toggle_visibility(self):
+        if self.isVisible():
+            self.hide()
+        else:
+            self.show()
+            self.raise_()
+            self.activateWindow()
 
     def create_menu(self):
         menu_bar = self.menuBar()
@@ -151,10 +207,20 @@ class AgentPiroGUI(QMainWindow):
         clear_action.triggered.connect(self.clear_chat)
         archivo_menu.addAction(clear_action)
 
+        self.tts_menu_action = QAction("Desactivar Voz", self)
+        self.tts_menu_action.triggered.connect(self.toggle_tts)
+        archivo_menu.addAction(self.tts_menu_action)
+
+        archivo_menu.addSeparator()
+
+        tray_action = QAction("Minimizar a Bandeja", self)
+        tray_action.triggered.connect(self.hide)
+        archivo_menu.addAction(tray_action)
+
         archivo_menu.addSeparator()
 
         exit_action = QAction("Salir", self)
-        exit_action.triggered.connect(self.close)
+        exit_action.triggered.connect(self.quit_app)
         archivo_menu.addAction(exit_action)
 
         help_menu = menu_bar.addMenu("Ayuda")
@@ -235,9 +301,9 @@ class AgentPiroGUI(QMainWindow):
         self._last_change_time = now
         self._last_text = text
 
-        # Si parece dictado (>5 chars en ráfaga) o texto ya largo, esperar a que termine
-        if self._char_count >= 3 or len(text) > 20:
-            self._typing_timer.start(200)  # 200ms de silencio = dictado terminado
+        # Solo auto-envía si detecta ráfaga rápida (Handy/dictado)
+        if self._char_count >= 3:
+            self._typing_timer.start(300)  # 0.3s de silencio = dictado terminado
 
     def _on_typing_stopped(self):
         text = self.input_field.text().strip()
@@ -269,6 +335,16 @@ class AgentPiroGUI(QMainWindow):
                 .replace(">", "&gt;")
                 .replace("\n", "<br>"))
 
+    def toggle_tts(self):
+        self._tts_enabled = not self._tts_enabled
+        icon = "🔊" if self._tts_enabled else "🔇"
+        self.mute_button.setText(icon)
+        self.tts_menu_action.setText("Desactivar Voz" if self._tts_enabled else "Activar Voz")
+        self.mute_button.setObjectName("muteButton" if self._tts_enabled else "muteButtonMuted")
+        self.mute_button.style().unpolish(self.mute_button)
+        self.mute_button.style().polish(self.mute_button)
+        logger.info(f"TTS {'activado' if self._tts_enabled else 'desactivado'}")
+
     def clear_chat(self):
         self.chat_display.clear()
         self.agent.clear_history()
@@ -278,15 +354,77 @@ class AgentPiroGUI(QMainWindow):
         self.status_label.setText(text)
 
     def show_about(self):
-        QMessageBox.about(self, f"Acerca de {AGENT_NAME}",
-                          f"<b>{AGENT_NAME}</b><br><br>"
-                          "Asistente personal de IA<br>"
-                          f"Modelo: {OLLAMA_MODEL}<br><br>"
-                          "Ejecutándose localmente con Ollama")
+        dlg = QDialog(self)
+        dlg.setWindowTitle(f"Acerca de {AGENT_NAME}")
+        dlg.setFixedSize(400, 250)
+        dlg.setStyleSheet("""
+            QDialog {
+                background-color: #1e1e2e;
+                color: #cdd6f4;
+            }
+            QLabel {
+                color: #cdd6f4;
+                font-size: 14px;
+            }
+        """)
+        layout = QVBoxLayout(dlg)
+        layout.setSpacing(15)
+        layout.setContentsMargins(30, 30, 30, 30)
+
+        title = QLabel(f"<b style='font-size: 22px; color: #89b4fa;'>{AGENT_NAME}</b>")
+        title.setAlignment(Qt.AlignCenter)
+        layout.addWidget(title)
+
+        desc = QLabel("Asistente personal de IA")
+        desc.setAlignment(Qt.AlignCenter)
+        layout.addWidget(desc)
+
+        info = QLabel(
+            f"<b>Modelo local:</b> {OLLAMA_MODEL}<br>"
+            f"<b>Modelo cloud:</b> {OLLAMA_CLOUD_MODEL}<br><br>"
+            "Ejecutándose localmente con Ollama"
+        )
+        info.setAlignment(Qt.AlignCenter)
+        info.setWordWrap(True)
+        layout.addWidget(info)
+
+        layout.addStretch()
+
+        btn_box = QDialogButtonBox(QDialogButtonBox.Ok)
+        btn_box.setStyleSheet("""
+            QPushButton {
+                background-color: #89b4fa;
+                color: #1e1e2e;
+                border: none;
+                border-radius: 8px;
+                padding: 8px 24px;
+                font-weight: bold;
+                font-size: 14px;
+            }
+            QPushButton:hover {
+                background-color: #b4befe;
+            }
+        """)
+        btn_box.accepted.connect(dlg.accept)
+        layout.addWidget(btn_box, alignment=Qt.AlignCenter)
+
+        dlg.exec()
 
     def closeEvent(self, event):
+        if self.tray_icon.isVisible():
+            self.hide()
+            event.ignore()
+        else:
+            logger.info("Cerrando AgentPiro...")
+            if self.tts_worker and self.tts_worker.isRunning():
+                self.tts_worker.tts.stop()
+                self.tts_worker.wait(2000)
+            event.accept()
+
+    def quit_app(self):
         logger.info("Cerrando AgentPiro...")
+        self.tray_icon.hide()
         if self.tts_worker and self.tts_worker.isRunning():
             self.tts_worker.tts.stop()
             self.tts_worker.wait(2000)
-        event.accept()
+        QApplication.quit()

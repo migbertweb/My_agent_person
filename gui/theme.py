@@ -35,8 +35,8 @@ QLineEdit#inputField:focus {
 
 QPushButton#sendButton {
     background-color: #89b4fa;
-    color: #1e1e2e;
-    border: none;
+    color: #ffffff;
+    border: 2px solid #b4befe;
     border-radius: 10px;
     padding: 12px 24px;
     font-weight: bold;
@@ -46,6 +46,7 @@ QPushButton#sendButton {
 
 QPushButton#sendButton:hover {
     background-color: #b4befe;
+    border-color: #cdd6f4;
 }
 
 QPushButton#sendButton:pressed {
@@ -89,6 +90,36 @@ QLabel#titleLabel {
 QLabel#statusLabel {
     color: #a6adc8;
     font-size: 14px;
+}
+
+QPushButton#muteButton {
+    background-color: #a6e3a1;
+    color: #11111b;
+    border: 2px solid #94e2d5;
+    border-radius: 10px;
+    font-size: 18px;
+    padding: 10px;
+    min-width: 50px;
+}
+
+QPushButton#muteButton:hover {
+    background-color: #94e2d5;
+    border-color: #a6e3a1;
+}
+
+QPushButton#muteButtonMuted {
+    background-color: #585b70;
+    color: #cdd6f4;
+    border: 2px solid #6c7086;
+    border-radius: 10px;
+    font-size: 18px;
+    padding: 10px;
+    min-width: 50px;
+}
+
+QPushButton#muteButtonMuted:hover {
+    background-color: #6c7086;
+    border-color: #7f849c;
 }
 
 QMenuBar {

@@ -22,19 +22,33 @@ cd agent-piro
 ```env
 # Ollama Local
 OLLAMA_HOST="http://localhost:11434"
-OLLAMA_MODEL="llama3.2"
-OLLAMA_FALLBACK_MODEL="gemma4:31b-cloud"
+OLLAMA_MODEL="gemma3:1b"
+OLLAMA_FALLBACK_MODEL="gemma3:4b"
 
-# Ollama Cloud (Opcional)
-OLLAMA_CLOUD_ENABLED="false"
+# Ollama Cloud (Opcional - prioridad sobre local)
+OLLAMA_CLOUD_ENABLED="true"
 OLLAMA_CLOUD_URL="https://api.ollama.com"
-OLLAMA_CLOUD_API_KEY=""
+OLLAMA_CLOUD_MODEL="gemma3:12b"
+OLLAMA_CLOUD_API_KEY="tu_api_key_aqui"
 
-# Otros
+# Memoria
+DB_PATH="./memory.db"
+
+# Agente
 MAX_ITERATIONS=5
 AGENT_NAME="AgentPiro"
 DEBUG_MODE=false
+
+# Seguridad
 ALLOWED_COMMANDS="date,time,cal,echo,ls,pwd,whoami,uname,cat"
+
+# Texto a Voz (TTS)
+TTS_ENABLED="true"
+TTS_PROVIDER="edge"
+TTS_VOICE="es-ES-AlvaroNeural"
+TTS_RATE="0%"
+TTS_PITCH="0%"
+TTS_AUTO_PLAY="true"
 ```
 
 ## 🌐 Configurar Ollama Cloud
@@ -59,20 +73,24 @@ OLLAMA_CLOUD_API_KEY="tu_api_key_aqui"
 
 AgentPiro intenta usar modelos en este orden:
 
-1. **Modelo Primario Local** (`llama3.2`)
-2. **Modelo Fallback Local** (`gemma4:31b-cloud`)
-3. **Ollama Cloud** (si está habilitado)
+1. **Ollama Cloud** (`gemma3:12b`) — si está habilitado y hay API key
+2. **Modelo Local Primario** (`gemma3:1b`)
+3. **Modelo Local Fallback** (`gemma3:4b`)
 
-Si el modelo local falla, automáticamente usa el siguiente en la lista.
+Si el modelo cloud falla, automáticamente cae a local.
 
 ## 📊 Características
 
-- ✅ GUI minimalista con PySide6
+- ✅ GUI minimalista con PySide6 (tema oscuro Catppuccin)
 - ✅ Medición automática de tiempo de respuesta
+- ✅ **Texto a Voz (TTS)** con edge-tts — voces naturales en español
+- ✅ **Entrada por dictado** compatible con wtype/Handy — auto-detecta y envía automáticamente
+- ✅ **Botón Mute** para silenciar/activar la voz en un clic
+- ✅ **Bandeja del sistema** — minimiza a tray con icono personalizable
 - ✅ Memoria persistente con SQLite
 - ✅ Herramientas del sistema (hora, fecha, comandos)
 - ✅ Soporte para Ollama Local y Cloud
-- ✅ Fallback automático entre modelos
+- ✅ Fallback automático Cloud → Local
 - ✅ Agent Loop con límite de iteraciones
 - ✅ Logs de seguridad y auditoría
 
@@ -97,6 +115,46 @@ agent-piro/
 - `get_datetime_full` - Obtiene fecha y hora completa
 - `execute_command` - Ejecuta comandos permitidos (whitelist)
 
+## 🎤 Texto a Voz (TTS)
+
+AgentPiro puede leer las respuestas en voz alta usando voces neurales de Microsoft Edge (edge-tts).
+
+### Configuración
+
+En `.env`:
+
+```env
+TTS_ENABLED="true"
+TTS_PROVIDER="edge"
+TTS_VOICE="es-ES-AlvaroNeural"   # Voz en español
+TTS_RATE="+30%"                   # Velocidad
+TTS_PITCH="-15Hz"                 # Tono
+TTS_AUTO_PLAY="true"              # Reproducir automáticamente
+```
+
+### Controles
+
+- **Botón 🔊/🔇** en la barra de entrada — silencia o activa la voz
+- **Menú Archivo → Activar/Desactivar Voz** — mismo control
+
+## ⌨️ Entrada por Dictado (Handy/wtype)
+
+AgentPiro detecta automáticamente cuando el texto se ingresa mediante herramientas de dictado o automatización (wtype, Handy Desktop).
+
+### Funcionamiento
+
+- Si los caracteres llegan en **ráfagas rápidas** (< 50ms entre caracteres), se considera dictado/Handy
+- Al detectar **3 segundos de silencio** tras la ráfaga, el mensaje se envía automáticamente
+- La escritura manual nunca activa el envío automático
+
+### Uso con Handy Desktop
+
+```bash
+# Handy envía el texto a la ventana de AgentPiro
+handy "Escribe tu consulta aquí"
+# AgentPiro lo detecta y envía automáticamente al detectar pausa
+```
+
 ## 🔒 Seguridad
 
 - **Whitelist de comandos**: Solo comandos autorizados pueden ejecutarse
@@ -111,8 +169,7 @@ agent-piro/
 
 ## 🎯 Próximos Pasos
 
-- [ ] Integración con ElevenLabs para texto a voz
-- [ ] Transcripción de audio con Whisper
 - [ ] Más herramientas del sistema
 - [ ] Exportación de conversaciones
-- [ ] Despliegue en la nube (Firebase)
+- [ ] Transcripción de audio con Whisper
+- [ ] Más voces y proveedores TTS
