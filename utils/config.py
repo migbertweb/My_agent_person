@@ -51,6 +51,10 @@ AGENT_NAME = Config.get("AGENT_NAME", "AgentPiro")
 DEBUG_MODE = Config.get_bool("DEBUG_MODE", False)
 ALLOWED_COMMANDS = Config.get_list("ALLOWED_COMMANDS", "date,time,cal,echo,ls,pwd,whoami,uname,cat")
 
+# Telegram Bot
+TELEGRAM_BOT_TOKEN = Config.get("TELEGRAM_BOT_TOKEN", "")
+TELEGRAM_USER_ID = Config.get_int("TELEGRAM_USER_ID", 0)
+
 # TTS Configuration
 TTS_ENABLED = Config.get_bool("TTS_ENABLED", True)
 TTS_PROVIDER = Config.get("TTS_PROVIDER", "edge")

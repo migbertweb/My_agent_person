@@ -18,6 +18,11 @@ def main():
     window = AgentPiroGUI()
     window.show()
 
+    from core.telegram_bot import TelegramBot
+    telegram_bot = TelegramBot(window.agent)
+    telegram_bot.start()
+    app.aboutToQuit.connect(telegram_bot.stop)
+
     logger.info("Interfaz iniciada correctamente")
     sys.exit(app.exec())
 

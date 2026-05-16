@@ -2,6 +2,7 @@ import subprocess
 import re
 from datetime import datetime
 from tools.toolkit import Tool, Toolkit
+from tools.web_search import create_web_search_tool
 from utils.config import ALLOWED_COMMANDS
 from utils.logger import logger
 
@@ -126,6 +127,8 @@ def create_system_tools() -> Toolkit:
         parameters={"type": "object", "properties": {}, "required": []},
         handler=lambda: get_datetime_full()
     ))
+
+    toolkit.register(create_web_search_tool())
 
     toolkit.register(Tool(
         name="execute_command",
