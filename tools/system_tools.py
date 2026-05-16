@@ -146,5 +146,137 @@ def create_system_tools() -> Toolkit:
         handler=lambda command: execute_safe_command(command)
     ))
 
+    # --- Gog tools ---
+    from tools import gog_tools
+    toolkit.register(Tool(
+        name="gog_gmail_search",
+        description="Buscar correos en Gmail con query avanzada y max_results (usa 'from:', 'subject:', etc)",
+        parameters={
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "Query de búsqueda Gmail, por ejemplo 'from:amazon.com' o 'subject:factura'"},
+                "max_results": {"type": "integer", "description": "Máximo de resultados (default 10)", "default": 10},
+                "account": {"type": "string", "description": "Cuenta Google opcional (email)"}
+            },
+            "required": ["query"]
+        },
+        handler=lambda query, max_results=10, account=None: gog_tools.gog_gmail_search(query, max_results, account)
+    ))
+    toolkit.register(Tool(
+        name="gog_gmail_send",
+        description="Enviar un correo desde Gmail (requiere: to, subject, body)",
+        parameters={
+            "type": "object",
+            "properties": {
+                "to": {"type": "string", "description": "Email destinatario"},
+                "subject": {"type": "string", "description": "Asunto del correo"},
+                "body": {"type": "string", "description": "Contenido del correo"},
+                "account": {"type": "string", "description": "Cuenta Google opcional (email)"}
+            },
+            "required": ["to", "subject", "body"]
+        },
+        handler=lambda to, subject, body, account=None: gog_tools.gog_gmail_send(to, subject, body, account)
+    ))
+    toolkit.register(Tool(
+        name="gog_calendar_events",
+        description="Listar eventos de Google Calendar en un rango de fechas",
+        parameters={
+            "type": "object",
+            "properties": {
+                "calendar_id": {"type": "string", "description": "ID del calendario (o email)"},
+                "date_from": {"type": "string", "description": "Fecha inicio (ISO: YYYY-MM-DD o YYYY-MM-DDTHH:MM:SS)"},
+                "date_to": {"type": "string", "description": "Fecha fin (ISO: YYYY-MM-DD o YYYY-MM-DDTHH:MM:SS)"},
+                "account": {"type": "string", "description": "Cuenta Google opcional (email)"}
+            },
+            "required": ["calendar_id", "date_from", "date_to"]
+        },
+        handler=lambda calendar_id, date_from, date_to, account=None: gog_tools.gog_calendar_events(calendar_id, date_from, date_to, account)
+    ))
+
+    toolkit.register(Tool(
+        name="gog_contacts_list",
+        description="Listar contactos de Google Contacts (máx 20 por defecto)",
+        parameters={
+            "type": "object",
+            "properties": {
+                "max_results": {"type": "integer", "description": "Máximo de contactos a listar (def 20)", "default": 20},
+                "account": {"type": "string", "description": "Cuenta Google opcional (email)"}
+            },
+            "required": []
+        },
+        handler=lambda max_results=20, account=None: gog_tools.gog_contacts_list(max_results, account)
+    ))
+    toolkit.register(Tool(
+        name="gog_drive_search",
+        description="Buscar archivos en Google Drive por query y max_results",
+        parameters={
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "Consulta de búsqueda (ej: name:reporte.pdf)"},
+                "max_results": {"type": "integer", "description": "Máximo de resultados (def 10)", "default": 10},
+                "account": {"type": "string", "description": "Cuenta Google opcional (email)"}
+            },
+            "required": ["query"]
+        },
+        handler=lambda query, max_results=10, account=None: gog_tools.gog_drive_search(query, max_results, account)
+    ))
+    toolkit.register(Tool(
+        name="gog_sheets_get",
+        description="Leer un rango de celdas de una hoja de Google Sheets.",
+        parameters={
+            "type": "object",
+            "properties": {
+                "sheet_id": {"type": "string", "description": "ID de la hoja de cálculo (Google Sheet)"},
+                "range_": {"type": "string", "description": "Rango a leer, ej: 'Hoja1!A1:B2'"},
+                "account": {"type": "string", "description": "Cuenta Google opcional (email)"},
+                "as_json": {"type": "boolean", "description": "Devolver en JSON (default True)", "default": True}
+            },
+            "required": ["sheet_id", "range_" ]
+        },
+        handler=lambda sheet_id, range_, account=None, as_json=True: gog_tools.gog_sheets_get(sheet_id, range_, account, as_json)
+    ))
+    toolkit.register(Tool(
+        name="gog_sheets_update",
+        description="Actualizar un rango de celdas en Google Sheets.",
+        parameters={
+            "type": "object",
+            "properties": {
+                "sheet_id": {"type": "string", "description": "ID de la hoja de cálculo"},
+                "range_": {"type": "string", "description": "Rango a actualizar, ej: 'Hoja1!A1:B2'"},
+                "values_json": {"type": "string", "description": "Valores en formato JSON ([[fila1],[fila2],...])"},
+                "account": {"type": "string", "description": "Cuenta Google opcional (email)"}
+            },
+            "required": ["sheet_id", "range_", "values_json"]
+        },
+        handler=lambda sheet_id, range_, values_json, account=None: gog_tools.gog_sheets_update(sheet_id, range_, values_json, account)
+    ))
+    toolkit.register(Tool(
+        name="gog_docs_cat",
+        description="Leer el contenido de un documento de Google Docs (solo texto).",
+        parameters={
+            "type": "object",
+            "properties": {
+                "doc_id": {"type": "string", "description": "ID de Google Doc"},
+                "account": {"type": "string", "description": "Cuenta Google opcional (email)"}
+            },
+            "required": ["doc_id"]
+        },
+        handler=lambda doc_id, account=None: gog_tools.gog_docs_cat(doc_id, account)
+    ))
+    toolkit.register(Tool(
+        name="gog_docs_export",
+        description="Exportar un documento de Google Docs a txt/pdf/docx/otros.",
+        parameters={
+            "type": "object",
+            "properties": {
+                "doc_id": {"type": "string", "description": "ID de Google Doc"},
+                "fmt": {"type": "string", "description": "Formato de exportación: txt/pdf/docx, default: txt", "default": "txt"},
+                "outfile": {"type": "string", "description": "Archivo destino local (default: /tmp/doc.txt)", "default": "/tmp/doc.txt"},
+                "account": {"type": "string", "description": "Cuenta Google opcional (email)"}
+            },
+            "required": ["doc_id"]
+        },
+        handler=lambda doc_id, fmt="txt", outfile="/tmp/doc.txt", account=None: gog_tools.gog_docs_export(doc_id, fmt, outfile, account)
+    ))
     logger.info(f"Herramientas del sistema cargadas: {[t.name for t in toolkit.tools.values()]}")
     return toolkit

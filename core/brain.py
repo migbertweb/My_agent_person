@@ -16,6 +16,26 @@ _SEARCH_TRIGGERS = re.compile(
     re.IGNORECASE
 )
 
+_GMAIL_TRIGGERS = re.compile(
+    r"\b(correo|email|mail|gmail|mensaje|"
+    r"leeme|lee(me)?|último(s)? correo(s)?|"
+    r"no leído|no leídos|no leidas|inbox|bandeja|"
+    r"enviar|envía|manda(me)?)\b",
+    re.IGNORECASE
+)
+
+_CALENDAR_TRIGGERS = re.compile(
+    r"\b(calendario|calendar|eventos|citas|reunión|reunion|"
+    r"agenda|agendado|programado|schedule)\b",
+    re.IGNORECASE
+)
+
+_DRIVE_TRIGGERS = re.compile(
+    r"\b(drive|archivo(s)?|documento(s)?|fichero(s)?|"
+    r"pdf|word|excel|hoja(s)?)\b",
+    re.IGNORECASE
+)
+
 
 class AgentPiro:
     def __init__(self, memory: Memory, toolkit: Toolkit, llm_manager: OllamaManager = None):
@@ -25,12 +45,26 @@ class AgentPiro:
         self.last_source = "local"
         self.last_model = ""
 
-    def _inject_web_search(self, query: str) -> str:
-        tool = self.toolkit.get("web_search")
+    def _run_tool(self, name: str, **kwargs) -> str:
+        tool = self.toolkit.get(name)
         if not tool:
             return ""
-        logger.agent_action("AUTO_WEB_SEARCH", query[:100])
-        return tool.execute(query=query)
+        logger.agent_action("FORCE_TOOL", f"{name} | args: {kwargs}")
+        return tool.execute(**kwargs)
+
+    def _inject_web_search(self, query: str) -> str:
+        return self._run_tool("web_search", query=query)
+
+    def _inject_gmail_search(self, user_input: str) -> str:
+        max_results = 1
+        m = re.search(r"últimos?\s+(\d+)|ultimos?\s+(\d+)", user_input, re.IGNORECASE)
+        if m:
+            max_results = int((m.group(1) or m.group(2)))
+        if "no leído" in user_input or "no leidos" in user_input or "no leidas" in user_input:
+            max_results = 5
+        if "enviar" in user_input or "envía" in user_input or "manda" in user_input:
+            return None
+        return self._run_tool("gog_gmail_search", query="in:inbox newer_than:30d", max_results=max_results)
 
     def process(self, user_input: str) -> str:
         logger.agent_action("USER_INPUT", user_input[:100])
@@ -38,30 +72,58 @@ class AgentPiro:
         facts = self.memory.get_all_facts()
         system_prompt = AgentPrompt.get_system_prompt(facts)
 
+        injected_data = ""
+
         search_result = ""
         if _SEARCH_TRIGGERS.search(user_input):
             search_result = self._inject_web_search(user_input)
+            if search_result:
+                injected_data += f"\n[Web: {search_result}]\n"
+
+        gmail_result = ""
+        if _GMAIL_TRIGGERS.search(user_input):
+            gmail_result = self._inject_gmail_search(user_input)
+            if gmail_result:
+                injected_data += f"\n[Gmail:\n{gmail_result}]\n"
+
+        calendar_result = ""
+        if _CALENDAR_TRIGGERS.search(user_input):
+            from datetime import datetime, timedelta
+            today = datetime.now()
+            next_week = today + timedelta(days=7)
+            date_from = today.strftime("%Y-%m-%d")
+            date_to = next_week.strftime("%Y-%m-%d")
+            calendar_result = self._run_tool("gog_calendar_events", calendar_id="default", date_from=date_from, date_to=date_to)
+            if calendar_result:
+                injected_data += f"\n[Calendar:\n{calendar_result}]\n"
+
+        drive_result = ""
+        if _DRIVE_TRIGGERS.search(user_input):
+            drive_result = self._run_tool("gog_drive_search", query=user_input, max_results=5)
+            if drive_result:
+                injected_data += f"\n[Drive:\n{drive_result}]\n"
 
         history = self.memory.get_conversation_history(limit=10)
 
-        # API Cloud requiere alternancia user/assistant. No soporta rol 'system'.
+        if injected_data:
+            user_content = f"{user_input}\n\n---\n{injected_data}"
+            iter_extra = " (con datos Google inyectados)"
+        else:
+            user_content = user_input
+            iter_extra = ""
+
         messages = []
         if not history:
             messages.append({
                 "role": "user",
-                "content": f"{system_prompt}\n\n{user_input}"
+                "content": f"{system_prompt}\n\n{user_content}"
             })
         else:
             messages.extend(history)
-            messages.append({"role": "user", "content": user_input})
-
-        if search_result:
-            messages.append({"role": "assistant", "content": f"Resultados de búsqueda para '{user_input}':\n{search_result}"})
-            iter_extra = " (con búsqueda automática)"
-        else:
-            iter_extra = ""
+            messages.append({"role": "user", "content": user_content})
 
         tools_schema = self.toolkit.get_all_tools()
+        logger.debug(f"Tools schema enviado al modelo ({len(tools_schema)} tools): {[t['name'] for t in tools_schema]}")
 
         iteration = 0
         max_iter = MAX_ITERATIONS

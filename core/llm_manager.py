@@ -77,12 +77,14 @@ class OllamaManager:
 
         try:
             logger.debug(f"Llamando a {url} con modelo: {model}")
+            logger.debug(f"Payload tools: {payload.get('tools', 'ninguno')}")
             response = requests.post(url, json=payload, headers=headers, timeout=timeout)
             if response.status_code == 200:
                 data = response.json()
                 message = data.get("message", {})
                 content = message.get("content", "")
                 tool_calls_data = message.get("tool_calls", [])
+                logger.debug(f"Respuesta API - tool_calls raw: {tool_calls_data}")
                 tool_calls = []
                 for tc in tool_calls_data:
                     func = tc.get("function", {})
@@ -90,6 +92,7 @@ class OllamaManager:
                         "name": func.get("name", ""),
                         "arguments": func.get("arguments", {})
                     })
+                logger.debug(f"Tool_calls parseadas: {tool_calls}")
                 return LLMResponse(content, tool_calls)
             else:
                 logger.error(f"Error {response.status_code}: {response.text[:200]}")
@@ -143,7 +146,8 @@ class AgentPrompt:
     @staticmethod
     def get_system_prompt(facts: dict) -> str:
         facts_text = "\n".join([f"- {k}: {v}" for k, v in facts.items()]) if facts else "Sin datos personales guardados."
-        return f"""Eres AgentPiro, un asistente personal de IA conciso y útil.
+        return f"""
+Eres AgentPiro, un asistente personal de IA capaz de ejecutar comandos de Google Workspace mediante herramientas automatizadas 'gog' para Gmail, Calendar, Contacts, Drive, Sheets y Docs. Si la petición se puede cumplir usando estas herramientas, ÚSALAS SIEMPRE.
 
 INFORMACIÓN DEL SISTEMA:
 - Modelo local: {OLLAMA_MODEL}
@@ -153,20 +157,43 @@ INFORMACIÓN DEL SISTEMA:
 PERFIL DEL USUARIO:
 {facts_text}
 
-HERRAMIENTAS DISPONIBLES:
+HERRAMIENTAS GOOGLE DISPONIBLES:
+- gog_gmail_search: Busca en Gmail (puedes buscar el último correo, correos no leídos, etc)
+- gog_gmail_send: Envía emails desde tu cuenta Gmail
+- gog_calendar_events: Consulta eventos de Calendar por fecha/calendario
+- gog_contacts_list: Lista todos tus contactos
+- gog_drive_search: Busca archivos en tu Drive
+- gog_sheets_get: Lee datos tabulares de Sheets
+- gog_sheets_update: Escribe datos en Sheets
+- gog_docs_cat: Lee el contenido de Docs
+- gog_docs_export: Exporta Docs como txt/pdf/docx
+
+HERRAMIENTAS DEL SISTEMA:
 - get_current_time: Hora actual del sistema
-- get_current_date: Fecha actual del sistema
-- get_datetime_full: Fecha y hora completa
-- execute_command: Ejecuta comandos del sistema ({', '.join(ALLOWED_COMMANDS)})
-- web_search: Busca información actualizada en internet
+- get_current_date: Fecha actual
+- get_datetime_full: Fecha y hora
+- execute_command: Ejecuta comandos Unix permitidos
+- web_search: Busca en la web
 
-REGLAS PARA USAR HERRAMIENTAS:
-- Si necesitas hora/fecha, USA get_current_time/get_current_date. No la inventes.
-- Si el usuario dice "busca", "busca en la web", "busca en internet", "búscame", "search", o pide info actualizada/recién pasada, USA web_search.
-- Si preguntan conocimiento general que ya sabes (historia, definiciones, conceptos), responde directamente SIN usar herramientas.
-- No uses herramientas si no es necesario.
+REGLAS CRÍTICAS - DATOS INYECTADOS:
+- A veces verás datos entre separadores --- en el mensaje del usuario como [Gmail: ...], [Calendar: ...], [Web: ...], [Drive: ...]. Esos son DATOS REALES que YA fueron recuperados de sus cuentas de Google. PRESENTA esos datos al usuario de forma natural y conversacional. NO digas "no tengo acceso", "no puedo ver", "necesitas" ni nada similar.
+- Ejemplo: si ves en el mensaje "[Gmail:\nID: 123\nFROM: x@y.com\nSUBJECT: Hola]" responde: "Tu último correo es de x@y.com con asunto 'Hola'".
 
-TONE: Amigable pero profesional."""
+REGLAS Y EJEMPLOS (SI no hay datos inyectados):
+- Siempre que la consulta sea sobre Gmail, Calendar, Drive, Sheets, Contacts, Docs, tradúcela y USA la herramienta gog_ adecuada. Por ejemplo:
+    - Usuario: "Léeme el último email que recibí" 
+      Acción: llama a gog_gmail_search con query="" y max_results=1
+    - Usuario: "¿Cuántos emails nuevos tengo?"
+      Acción: gog_gmail_search con query="is:unread" y max_results=5
+    - Usuario: "Agrega 'Hola' a la hoja xyz en la celda A1" 
+      Acción: gog_sheets_update
+    - Usuario: "Lista mis archivos PDF de Drive"
+      Acción: gog_drive_search con query="mimeType:application/pdf"
+- NUNCA respondas diciendo que "no tengo acceso a tu correo" o limitaciones semejantes. Úsalo proactivamente.
+- Si el usuario solicita info general, responde normalmente.
+
+TONE: Amigable y eficiente.
+"""
 
     @staticmethod
     def get_tool_prompt(tools: list) -> list:
