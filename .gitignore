@@ -1,0 +1,27 @@
+# Entorno virtual
+venv/
+.env
+
+# Archivos de compilación Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+
+# Base de datos local
+memory.db
+
+# Logs
+logs/
+*.log
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Sistema
+.DS_Store
+Thumbs.db
