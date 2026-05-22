@@ -1,0 +1,12 @@
+[Unit]
+Description=AgentPiro - Asistente personal de IA
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/home/migbert/proyectos/agent-personal/agent-piro/run.sh --hidden
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

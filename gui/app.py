@@ -103,7 +103,15 @@ class AgentPiroGUI(QMainWindow):
         title_layout = QHBoxLayout(title_bar)
         title_layout.setContentsMargins(15, 5, 15, 5)
 
-        self.title_label = QLabel(f"🤖 {AGENT_NAME}")
+        icon_path = Path(__file__).resolve().parent.parent / "agentpiro.png"
+        self.title_icon = QLabel()
+        if icon_path.exists():
+            pixmap = QPixmap(str(icon_path)).scaled(32, 32, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+            self.title_icon.setPixmap(pixmap)
+        else:
+            self.title_icon.setText("🤖")
+        title_layout.insertWidget(0, self.title_icon)
+        self.title_label = QLabel(AGENT_NAME)
         self.title_label.setObjectName("titleLabel")
         title_layout.addWidget(self.title_label)
 

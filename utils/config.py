@@ -51,9 +51,15 @@ AGENT_NAME = Config.get("AGENT_NAME", "AgentPiro")
 DEBUG_MODE = Config.get_bool("DEBUG_MODE", False)
 ALLOWED_COMMANDS = Config.get_list("ALLOWED_COMMANDS", "date,time,cal,echo,ls,pwd,whoami,uname,cat")
 
-# Telegram Bot
+# Telegram Bot Integration (bot token API)
 TELEGRAM_BOT_TOKEN = Config.get("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_USER_ID = Config.get_int("TELEGRAM_USER_ID", 0)
+
+# Telegram (Telethon User API)
+TELEGRAM_API_ID = Config.get_int("TELEGRAM_API_ID", 0)
+TELEGRAM_API_HASH = Config.get("TELEGRAM_API_HASH", "")
+TELEGRAM_PHONE = Config.get("TELEGRAM_PHONE", "")
+TELEGRAM_PASSWORD = Config.get("TELEGRAM_PASSWORD", "")
 
 # TTS Configuration
 TTS_ENABLED = Config.get_bool("TTS_ENABLED", True)

@@ -12,6 +12,9 @@ build/
 # Base de datos local
 memory.db
 
+# Telegram session (contiene datos de sesión personal)
+telegram_*.session*
+
 # Logs
 logs/
 *.log

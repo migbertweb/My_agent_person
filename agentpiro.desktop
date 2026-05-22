@@ -2,7 +2,7 @@
 Name=AgentPiro
 Comment=Asistente personal de IA con Ollama
 Exec=/home/migbert/proyectos/agent-personal/agent-piro/run.sh
-Icon=/home/migbert/proyectos/agent-personal/agentpiro.png
+Icon=/home/migbert/proyectos/agent-personal/agent-piro/agentpiro.png
 Terminal=false
 Type=Application
 Categories=Utility;AI;TextTools;
