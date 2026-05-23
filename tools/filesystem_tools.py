@@ -1,11 +1,12 @@
 import os
 import subprocess
 import shutil
+import itertools
 import glob as glob_module
 from pathlib import Path
 
 _HOME = os.path.expanduser("~")
-_ALLOWED_PREFIXES = (_HOME + "/", "/tmp/")
+_ALLOWED_DIRS = (_HOME + "/", "/tmp/", "/opt/", "/mnt/")
 _APPS = {
     "vscodium": "codium",
     "brave": "brave-browser",
@@ -26,7 +27,11 @@ _APPS = {
 
 def _safe_path(path: str) -> str:
     path = os.path.abspath(os.path.expanduser(path))
-    if not path.startswith(_ALLOWED_PREFIXES):
+    allowed = any(
+        path == d.rstrip("/") or path.startswith(d)
+        for d in _ALLOWED_DIRS
+    )
+    if not allowed:
         return ""
     return path
 
@@ -42,9 +47,9 @@ def search_files(pattern: str, directory: str = None, max_results: int = 20) -> 
         directory = _HOME
     safe_dir = _safe_path(directory)
     if not safe_dir:
-        return f"Error: directorio no permitido. Usa {_ALLOWED_PREFIXES[0]}"
+        return f"Error: directorio no permitido. Usa {_ALLOWED_DIRS[0]}"
     try:
-        matches = list(Path(safe_dir).rglob(pattern))[:max_results]
+        matches = list(itertools.islice(Path(safe_dir).rglob(pattern), max_results))
         if not matches:
             return f"No se encontraron archivos con '{pattern}' en {safe_dir[:60]}..."
         result = []
@@ -58,10 +63,46 @@ def search_files(pattern: str, directory: str = None, max_results: int = 20) -> 
     except Exception as e:
         return f"Error: {e}"
 
+def search_content(query: str, directory: str = None, max_results: int = 20) -> str:
+    """Busca texto DENTRO del contenido de archivos con rg. No interactivo."""
+    safe_dir = _safe_path(directory) if directory else _HOME
+    if not safe_dir:
+        return "Error: directorio no permitido"
+    if not query or len(query.strip()) < 2:
+        return "Error: query debe tener al menos 2 caracteres"
+    query = query.strip()
+    try:
+        _EXCLUDE_GLOBS = ["!.git", "!node_modules", "!.cache", "!.local",
+                          "!.mozilla", "!.npm", "!.cargo", "!.venv", "!venv"]
+        proc = subprocess.run(
+            ["rg", "-l", "-i", "--max-depth", "12", "--no-messages",
+             *(a for g in _EXCLUDE_GLOBS for a in ("-g", g)),
+             "--", query, safe_dir],
+            capture_output=True, text=True, timeout=15,
+        )
+        matches = [l for l in proc.stdout.strip().split("\n") if l][:max_results]
+        if not matches:
+            return f"No se encontraron archivos conteniendo '{query}' en {safe_dir[:60]}..."
+        result = []
+        for p in matches:
+            try:
+                size = os.path.getsize(p) if os.path.isfile(p) else 0
+                size_str = f"{size}B" if size < 1024 else f"{size//1024}KB" if size < 1024**2 else f"{size//(1024**2)}MB"
+            except OSError:
+                size_str = "?"
+            result.append(f"📄 {p} ({size_str})")
+        return f"Archivos con '{query}':\n" + "\n".join(result[:max_results])
+    except FileNotFoundError:
+        return "Error: ripgrep no está instalado (sudo pacman -S ripgrep)"
+    except subprocess.TimeoutExpired:
+        return "Error: búsqueda agotó el tiempo (15s)"
+    except Exception as e:
+        return f"Error: {e}"
+
 def open_file(path: str) -> str:
     safe = _safe_path(path)
     if not safe:
-        return f"Error: ruta no permitida. Usa {_ALLOWED_PREFIXES[0]}"
+        return f"Error: ruta no permitida. Usa {_ALLOWED_DIRS[0]}"
     if not os.path.exists(safe):
         return f"Error: '{path}' no existe"
     try:
@@ -172,3 +213,172 @@ def read_file(path: str, max_lines: int = 50) -> str:
         return "\n".join(lines)
     except Exception as e:
         return f"Error leyendo archivo: {e}"
+
+
+def _fzf_prompt(items: list[str], preview_cmd: str = "", header: str = "") -> str:
+    """Lanza fzf con items via stdin y captura la selección."""
+    if not items:
+        return ""
+    cmd = ["fzf", "--height=80%", "--layout=reverse", "--border"]
+    if preview_cmd:
+        cmd += ["--preview", preview_cmd]
+    if header:
+        cmd += ["--header", header]
+    try:
+        proc = subprocess.run(
+            cmd,
+            input="\n".join(items),
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        return proc.stdout.strip()
+    except Exception:
+        return ""
+
+
+def fzf_browse(directory: str = None) -> str:
+    """Exploración interactiva de archivos con fzf + fd + bat"""
+    safe_dir = _safe_path(directory) if directory else _HOME
+    if not safe_dir:
+        return "Error: directorio no permitido"
+    try:
+        proc = subprocess.run(
+            ["fd", "--type=f", "--type=d", ".", safe_dir],
+            capture_output=True, text=True, timeout=30,
+        )
+        if proc.returncode != 0 or not proc.stdout.strip():
+            return f"No se encontraron archivos en {safe_dir}"
+        files = [l for l in proc.stdout.strip().split("\n") if l]
+        preview = 'bat --style=numbers,changes --color=always {} 2>/dev/null || ls -la {}'
+        selected = _fzf_prompt(files, preview, f"Explorando: {safe_dir}")
+        if not selected:
+            return "Selección cancelada"
+        return f"Seleccionado: {selected}"
+    except FileNotFoundError:
+        return "Error: fd no está instalado (sudo pacman -S fd)"
+    except subprocess.TimeoutExpired:
+        return "Error: búsqueda agotó el tiempo"
+    except Exception as e:
+        return f"Error: {e}"
+
+
+def fzf_content_search(query: str, directory: str = None) -> str:
+    """Busca texto DENTRO de archivos con rg + fzf selección + bat preview"""
+    safe_dir = _safe_path(directory) if directory else _HOME
+    if not safe_dir:
+        return "Error: directorio no permitido"
+    if not query or len(query.strip()) < 2:
+        return "Error: query debe tener al menos 2 caracteres"
+    query = query.strip()
+    try:
+        _EXCLUDE = ["!.git", "!node_modules", "!.cache", "!.local",
+                     "!.mozilla", "!.npm", "!.cargo", "!.venv", "!venv"]
+        proc = subprocess.run(
+            ["rg", "-l", "-i", "--max-depth", "12", "--no-messages",
+             *(a for g in _EXCLUDE for a in ("-g", g)),
+             "--", query, safe_dir],
+            capture_output=True, text=True, timeout=30,
+        )
+        if proc.returncode not in (0, 1) or not proc.stdout.strip():
+            return f"No se encontraron archivos conteniendo '{query}' en {safe_dir}"
+        files = [l for l in proc.stdout.strip().split("\n") if l]
+        if not files:
+            return f"No se encontraron archivos conteniendo '{query}'"
+        preview = f'bat --style=numbers,changes --color=always {{}} 2>/dev/null || head -100 {{}}'
+        header = f"Archivos con '{query}' — selecciona uno para abrir"
+        selected = _fzf_prompt(files, preview, header)
+        if not selected:
+            return "Selección cancelada"
+        return f"Archivo con '{query}': {selected}"
+    except FileNotFoundError:
+        return "Error: ripgrep no está instalado (sudo pacman -S ripgrep)"
+    except subprocess.TimeoutExpired:
+        return "Error: búsqueda agotó el tiempo"
+    except Exception as e:
+        return f"Error: {e}"
+
+
+def fzf_grep_lines(query: str, directory: str = None) -> str:
+    """Busca líneas exactas con rg, permite seleccionar archivo:línea con fzf"""
+    safe_dir = _safe_path(directory) if directory else _HOME
+    if not safe_dir:
+        return "Error: directorio no permitido"
+    if not query or len(query.strip()) < 2:
+        return "Error: query debe tener al menos 2 caracteres"
+    query = query.strip()
+    try:
+        _EXCLUDE = ["!.git", "!node_modules", "!.cache", "!.local",
+                     "!.mozilla", "!.npm", "!.cargo", "!.venv", "!venv"]
+        proc = subprocess.run(
+            ["rg", "-n", "-i", "--max-depth", "12", "--no-messages",
+             *(a for g in _EXCLUDE for a in ("-g", g)),
+             "--", query, safe_dir],
+            capture_output=True, text=True, timeout=30,
+        )
+        if proc.returncode not in (0, 1) or not proc.stdout.strip():
+            return f"No se encontraron líneas con '{query}'"
+        lines = [l for l in proc.stdout.strip().split("\n") if l]
+        preview = (
+            f'bat --style=numbers,changes --color=always --highlight-line {{2}} '
+            f'{{1}} 2>/dev/null || echo "{{}}"'
+        )
+        header = f"Líneas con '{query}' — formato: archivo:línea:contenido"
+        selected = _fzf_prompt(lines, preview, header)
+        if not selected:
+            return "Selección cancelada"
+        parts = selected.split(":", 2)
+        if len(parts) >= 2:
+            return f"Línea seleccionada: {parts[0]}:{parts[1]}\n{parts[2] if len(parts) > 2 else ''}"
+        return f"Seleccionado: {selected}"
+    except FileNotFoundError:
+        return "Error: ripgrep no está instalado"
+    except subprocess.TimeoutExpired:
+        return "Error: búsqueda agotó el tiempo"
+    except Exception as e:
+        return f"Error: {e}"
+
+
+def extract_text(path: str) -> str:
+    """Extrae texto de archivos TXT, PDF, DOCX y código fuente"""
+    safe = _safe_path(path)
+    if not safe:
+        return "Error: ruta no permitida"
+    if not os.path.isfile(safe):
+        return f"Error: '{path}' no es un archivo"
+    ext = os.path.splitext(safe)[1].lower()
+    _TEXT_EXTS = {".txt", ".md", ".py", ".js", ".ts", ".json", ".yml", ".yaml",
+                  ".cfg", ".conf", ".ini", ".toml", ".csv", ".env", ".sh", ".bash",
+                  ".zsh", ".html", ".css", ".xml", ".log", ".rst", ".tex", ".lua",
+                  ".rb", ".go", ".rs", ".c", ".cpp", ".h", ".hpp", ".java", ".kt",
+                  ".swift", ".pl", ".pm", ".tcl", ".sql", ".r", ".m", ".bat", ".ps1",
+                  ".yaml", ".svelte", ".vue", ".tsx", ".jsx"}
+
+    try:
+        if ext in _TEXT_EXTS:
+            with open(safe, "r", encoding="utf-8", errors="replace") as f:
+                return f.read(50000)
+        elif ext == ".pdf":
+            proc = subprocess.run(
+                ["pdftotext", "-layout", safe, "-"],
+                capture_output=True, text=True, timeout=30,
+            )
+            if proc.returncode == 0 and proc.stdout.strip():
+                return proc.stdout.strip()[:50000]
+            return f"Error extrayendo PDF: {proc.stderr.strip() or 'sin contenido'}"
+        elif ext == ".docx":
+            try:
+                from docx import Document
+                doc = Document(safe)
+                text = "\n".join(p.text for p in doc.paragraphs)
+                return text[:50000] if text.strip() else "Documento vacío o sin texto"
+            except ImportError:
+                return "Error: python-docx no está instalado"
+            except Exception as e:
+                return f"Error leyendo DOCX: {e}"
+        else:
+            return f"Extensión '{ext}' no soportada para extracción de texto"
+    except subprocess.TimeoutExpired:
+        return "Error: extracción agotó el tiempo"
+    except Exception as e:
+        return f"Error extrayendo texto: {e}"

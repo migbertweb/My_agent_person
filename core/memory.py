@@ -1,8 +1,9 @@
+import json
 import sqlite3
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
-from utils.config import DB_PATH
+from utils.config import DB_PATH, MAX_HISTORY
 from utils.logger import logger
 
 
@@ -36,9 +37,15 @@ class Memory:
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 role TEXT NOT NULL,
                 content TEXT NOT NULL,
+                tool_calls TEXT,
                 timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
+
+        try:
+            cursor.execute("ALTER TABLE conversations ADD COLUMN tool_calls TEXT")
+        except sqlite3.OperationalError:
+            pass
 
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS session_logs (
@@ -94,11 +101,15 @@ class Memory:
             logger.error(f"Error obteniendo todos los hechos: {e}")
             return {}
 
-    def add_message(self, role: str, content: str) -> bool:
+    def add_message(self, role: str, content: str, tool_calls: Optional[list] = None) -> bool:
         try:
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
-            cursor.execute("INSERT INTO conversations (role, content) VALUES (?, ?)", (role, content))
+            tool_calls_json = json.dumps(tool_calls) if tool_calls else None
+            cursor.execute(
+                "INSERT INTO conversations (role, content, tool_calls) VALUES (?, ?, ?)",
+                (role, content, tool_calls_json)
+            )
             conn.commit()
             conn.close()
             return True
@@ -106,16 +117,24 @@ class Memory:
             logger.error(f"Error agregando mensaje: {e}")
             return False
 
-    def get_conversation_history(self, limit: int = 20) -> list:
+    def get_conversation_history(self, limit: int = None) -> list:
+        if limit is None:
+            limit = MAX_HISTORY
         try:
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
             cursor.execute("""
-                SELECT role, content FROM conversations
-                ORDER BY id ASC LIMIT ?
+                SELECT role, content, tool_calls FROM conversations
+                ORDER BY id DESC LIMIT ?
             """, (limit,))
-            result = [{"role": row[0], "content": row[1]} for row in cursor.fetchall()]
+            rows = cursor.fetchall()
             conn.close()
+            result = []
+            for row in reversed(rows):
+                msg = {"role": row[0], "content": row[1]}
+                if row[2]:
+                    msg["tool_calls"] = json.loads(row[2])
+                result.append(msg)
             return result
         except Exception as e:
             logger.error(f"Error obteniendo historial: {e}")

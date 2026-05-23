@@ -59,6 +59,22 @@ class TTSWorker(QThread):
             self.error.emit(str(e))
 
 
+class SummarizeWorker(QThread):
+    finished = Signal(str)
+    error = Signal(str)
+
+    def __init__(self, agent: AgentPiro):
+        super().__init__()
+        self.agent = agent
+
+    def run(self):
+        try:
+            summary = self.agent.summarize_context()
+            self.finished.emit(summary)
+        except Exception as e:
+            self.error.emit(str(e))
+
+
 class AgentPiroGUI(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -215,6 +231,10 @@ class AgentPiroGUI(QMainWindow):
         clear_action.triggered.connect(self.clear_chat)
         archivo_menu.addAction(clear_action)
 
+        summarize_action = QAction("Resumir Contexto", self)
+        summarize_action.triggered.connect(self.summarize_chat)
+        archivo_menu.addAction(summarize_action)
+
         self.tts_menu_action = QAction("Desactivar Voz", self)
         self.tts_menu_action.triggered.connect(self.toggle_tts)
         archivo_menu.addAction(self.tts_menu_action)
@@ -357,6 +377,25 @@ class AgentPiroGUI(QMainWindow):
         self.chat_display.clear()
         self.agent.clear_history()
         self.append_message("system", "Chat limpiado. ¿En qué puedo ayudarte?")
+
+    def summarize_chat(self):
+        self.update_status("Resumiendo contexto...")
+        self.summarize_worker = SummarizeWorker(self.agent)
+        self.summarize_worker.finished.connect(self._on_summarize_done)
+        self.summarize_worker.error.connect(self._on_summarize_error)
+        self.summarize_worker.start()
+
+    def _on_summarize_done(self, summary: str):
+        self.chat_display.clear()
+        self.append_message("system", f"Contexto resumido y guardado. El asistente recordará el contexto previo en las siguientes respuestas.")
+        source = self.agent.last_source
+        source_icon = "☁️" if source == "cloud" else "💻"
+        model_name = OLLAMA_CLOUD_MODEL if source == "cloud" else OLLAMA_MODEL
+        self.update_status(f"{source_icon} {model_name} | Contexto resumido")
+
+    def _on_summarize_error(self, error: str):
+        self.append_message("error", f"Error al resumir contexto: {error}")
+        self.update_status("Error al resumir")
 
     def update_status(self, text: str):
         self.status_label.setText(text)

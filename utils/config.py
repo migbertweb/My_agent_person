@@ -47,6 +47,7 @@ OLLAMA_CLOUD_API_KEY = Config.get("OLLAMA_CLOUD_API_KEY", "")
 
 DB_PATH = Config.get("DB_PATH", "./memory.db")
 MAX_ITERATIONS = Config.get_int("MAX_ITERATIONS", 5)
+MAX_HISTORY = Config.get_int("MAX_HISTORY", 20)
 AGENT_NAME = Config.get("AGENT_NAME", "AgentPiro")
 DEBUG_MODE = Config.get_bool("DEBUG_MODE", False)
 ALLOWED_COMMANDS = Config.get_list("ALLOWED_COMMANDS", "date,time,cal,echo,ls,pwd,whoami,uname,cat")

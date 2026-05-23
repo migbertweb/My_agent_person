@@ -29,6 +29,25 @@ Referencia rápida de comandos para interactuar con:
 
 ---
 
+## File Search (Búsqueda por Nombre y Contenido)
+
+| Si dices... | AgentPiro hace... |
+|---|---|
+| "busca archivos llamados curriculo" / "encuentra un archivo llamado X" | `search_files(pattern="*curriculo*")` — búsqueda por nombre con glob |
+| "busca archivos .pdf" / "encuentra *.py en /opt" | `search_files(pattern="*.pdf")` — búsqueda por extensión |
+| "busca archivos que contengan 'presupuesto'" | `search_content(query="presupuesto")` — búsqueda dentro del contenido |
+| "busca documentos con la palabra 'informe'" | `search_content(query="informe")` — busca dentro del contenido |
+| "extrae texto de /ruta/doc.pdf" | `extract_text(path="/ruta/doc.pdf")` — pdf→pdftotext, docx→python-docx |
+| "lee el documento reporte.docx" | `extract_text(path="reporte.docx")` — extrae texto de DOCX |
+| "encuentra archivos en /mnt que digan ERROR" | `search_content(query="ERROR", directory="/mnt")` |
+| "busca archivos con la palabra contrato en Documentos" | `search_content(query="contrato", directory="~/Documentos")` |
+
+**Requisitos:** `rg` (ripgrep), `fd`, `pdftotext`, `python-docx`
+**Directorios disponibles:** `/home/migbert`, `/opt`, `/mnt`, `/tmp`
+**Skill asociada:** `skills/fzf/SKILL.md`
+
+---
+
 ## Apps (Aplicaciones)
 
 | Si dices... | AgentPiro hace... |
@@ -217,5 +236,5 @@ Para autorizar servicios: `gog auth add tu@email.com --services calendar,chat,cl
 
 ---
 
-*Referencia generada para skills gog (24+ servicios) + filesystem + apps + web search + sistema.*
-*Última actualización: 2026-05-21*
+*Referencia generada para skills gog (24+ servicios) + fzf (búsqueda interactiva) + filesystem + apps + web search + sistema.*
+*Última actualización: 2026-05-22*

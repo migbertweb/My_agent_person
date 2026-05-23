@@ -1,9 +1,10 @@
 import re
+import os
 from typing import Optional
 from core.llm_manager import OllamaManager, AgentPrompt
 from core.memory import Memory
 from tools.toolkit import Toolkit
-from utils.config import MAX_ITERATIONS
+from utils.config import MAX_ITERATIONS, MAX_HISTORY
 from utils.logger import logger
 
 _SEARCH_TRIGGERS = re.compile(
@@ -17,8 +18,9 @@ _SEARCH_TRIGGERS = re.compile(
 )
 
 _FS_SEARCH_TRIGGERS = re.compile(
-    r"\b(busca|buscar|encuentra|listame|muestrame|donde está|donde esta)\b.*\b(archivo|"
-    r"carpeta|directorio|fichero|pdf|documento|imagen|foto|musica|video)\b",
+    r"\b(busca|buscar|encuentra|listame|muestrame|dónde está|donde esta|donde está)\b.*"
+    r"\b(archivos?|carpeta|carpetas?|directorio|directorios?|fichero|ficheros?|pdf|pdfs?|"
+    r"documento|documentos?|imagen|imágenes?|imagenes?|foto|fotos?|musica|música|video|videos?)\b",
     re.IGNORECASE
 )
 
@@ -49,6 +51,19 @@ _FS_MOVE_TRIGGERS = re.compile(
 
 _FS_DELETE_TRIGGERS = re.compile(
     r"\b(borra|borrar|elimina|eliminar|suprime|suprimir|tira|tirar)\b",
+    re.IGNORECASE
+)
+
+_FS_CONTENT_TRIGGERS = re.compile(
+    r"(?:\b(busca|buscar|encuentra|muestrame|listame)\b.*"
+    r"\b(que contengan|que tengan|que tenga|que digan|que diga|con la palabra|con el texto|texto|contenido|dentro de)\b"
+    r"|\b(que|que me)\s+(?:archivos?|documentos?)\s+"
+    r"(?:contengan|contienen|tengan|tienen|tenga|tiene|digan|dicen|diga|dice)\s+)",
+    re.IGNORECASE
+)
+
+_FS_EXTRACT_TRIGGERS = re.compile(
+    r"\b(extrae|extraer|lee|leer|saca|sacar)\b.*\b(texto|contenido)\b.*\b(de|del)\b.*\.(pdf|docx|doc)\b",
     re.IGNORECASE
 )
 
@@ -316,14 +331,66 @@ def _extract_telegram_entity(text: str) -> str:
     return ""
 
 
-def _extract_search(text: str) -> str:
+def _clean_query(q: str, stop_words: tuple) -> str:
+    """Strip stop words from prefix and mid-query, return cleaned string."""
+    changed = True
+    while changed:
+        changed = False
+        for w in sorted(stop_words, key=len, reverse=True):
+            pat = re.compile(rf"^\s*{re.escape(w)}\s+", re.IGNORECASE)
+            if pat.match(q):
+                q = pat.sub("", q)
+                changed = True
+                break
+    for w in sorted(stop_words, key=len, reverse=True):
+        parts = re.split(rf"\s+{re.escape(w)}\s+", q, maxsplit=1, flags=re.IGNORECASE)
+        if len(parts) > 1:
+            q = parts[0]
+    return q.strip()
+
+
+def _extract_search(text: str, stop_words: tuple = ()) -> str:
     """Extract search terms after trigger words."""
+    m = re.search(r'\b(?:que digan|que tengan|que contengan|que tenga|con la palabra|con el texto|que diga)\s*:?\s*["\']?([^"\']+)["\']?', text, re.IGNORECASE)
+    if m:
+        q = _clean_query(m.group(1), stop_words)
+        if len(q) >= 2:
+            return q
+    m = re.search(r'\b(?:que|que me)\s+(?:archivos?|documentos?)\s+(?:contengan|contienen|tengan|tienen|tenga|tiene|digan|dicen|diga|dice)\s+(.+?)$', text, re.IGNORECASE)
+    if m:
+        q = _clean_query(m.group(1), stop_words)
+        if len(q) >= 2:
+            return q
     m = re.search(r"(?:busca|buscar|encuentra|sobre|de|acerca de|llamado|llamada)\s+(.+?)$", text, re.IGNORECASE)
     if m:
-        q = m.group(1).strip().rstrip(".?!")
-        if len(q) > 2 and not re.match(r"^(un|una|el|la|los|las|mis|tus|del|para)\b", q, re.IGNORECASE):
+        q = _clean_query(m.group(1), stop_words)
+        if len(q) >= 2 and not re.match(r"^(un|una|el|la|los|las|mis|tus|del|para)\b", q, re.IGNORECASE):
             return q
     return ""
+
+
+def _extract_directory(text: str) -> str:
+    """Extract directory path from user input."""
+    m = re.search(r'(?:en|de|del|para)\s+(/\S[^\s]*)', text, re.IGNORECASE)
+    if m:
+        path = m.group(1).strip().rstrip(".?!")
+        if os.path.exists(path):
+            return path
+    _DIR_MAP = {
+        "documentos": "Documentos", "documents": "Documentos",
+        "descargas": "Descargas", "downloads": "Descargas",
+        "escritorio": "Escritorio", "desktop": "Escritorio",
+        "música": "Música", "musica": "Música", "music": "Música",
+        "imágenes": "Imágenes", "imagenes": "Imágenes", "images": "Imágenes", "pictures": "Imágenes",
+        "videos": "Vídeos", "vídeos": "Vídeos",
+        "proyectos": "proyectos", "projects": "proyectos",
+    }
+    m = re.search(r'(?:en mi carpeta|en la carpeta|en|de|del)\s+(\w[\wáéíóúÁÉÍÓÚñÑ]+)', text, re.IGNORECASE)
+    if m:
+        name = m.group(1).lower()
+        if name in _DIR_MAP:
+            return os.path.expanduser(f"~/{_DIR_MAP[name]}")
+    return None
 
 
 class AgentPiro:
@@ -354,7 +421,7 @@ class AgentPiro:
         injected_data = ""
 
         search_result = ""
-        if _SEARCH_TRIGGERS.search(user_input):
+        if _SEARCH_TRIGGERS.search(user_input) and not _FS_SEARCH_TRIGGERS.search(user_input):
             search_result = self._inject_web_search(user_input)
             if search_result:
                 injected_data += f"\n[Web: {search_result}]\n"
@@ -363,13 +430,38 @@ class AgentPiro:
         if google_data:
             injected_data += google_data
 
-        filesystem_result = ""
-        if _FS_SEARCH_TRIGGERS.search(user_input):
-            m = re.search(r"(?:\.\w+|\*\.\w+)", user_input)
-            pattern = m.group(0) if m else "*"
+        if _FS_CONTENT_TRIGGERS.search(user_input):
+            q = _extract_search(user_input, stop_words=("en", "de", "del", "para", "mi", "la", "el", "los", "las", "carpeta", "directorio", "archivos", "archivo", "documentos", "documento", "texto", "dentro", "palabra"))
+            d = _extract_directory(user_input)
+            if q and len(q) >= 2:
+                cs_result = self._run_tool("search_content", query=q, directory=d, max_results=15)
+                if cs_result:
+                    injected_data += f"\n[Contenido: {cs_result}]\n"
+
+        elif _FS_SEARCH_TRIGGERS.search(user_input):
+            pattern = "*"
+            _EXT_EXTS = r"pdf|py|js|ts|json|txt|md|docx?|xlsx?|pptx?|csv|html|css|xml|yml|yaml|toml|ini|cfg|conf|sh|bash|zsh|log|jpg|png|gif|svg|mp3|mp4|avi|mkv"
+            m_ext = re.search(rf"(?:\.(\w+)|\*\.(\w+))", user_input, re.IGNORECASE)
+            if m_ext:
+                pattern = f"*.{m_ext.group(1) or m_ext.group(2)}"
+            else:
+                m_name = re.search(r'(?:llamado|llamada|con nombre|con el nombre|llamados?)\s+["\']?([\w.\-]+)["\']?', user_input, re.IGNORECASE)
+                if m_name:
+                    pattern = f"*{m_name.group(1)}*"
+                else:
+                    m_bare_ext = re.search(rf"\b({_EXT_EXTS})\b", user_input, re.IGNORECASE)
+                    if m_bare_ext:
+                        pattern = f"*.{m_bare_ext.group(1).lower()}"
             fs_result = self._run_tool("search_files", pattern=pattern, max_results=15)
             if fs_result:
                 injected_data += f"\n[Files encontrados:\n{fs_result}]\n"
+
+        if _FS_EXTRACT_TRIGGERS.search(user_input):
+            m = re.search(r'(?:de|del)\s+(/[^\s]+)', user_input)
+            if m:
+                ext_result = self._run_tool("extract_text", path=m.group(1))
+                if ext_result:
+                    injected_data += f"\n[Texto extraído: {ext_result}]\n"
 
         if _FS_OPEN_TRIGGERS.search(user_input):
             app_found = None
@@ -385,8 +477,6 @@ class AgentPiro:
         if _FS_INFO_TRIGGERS.search(user_input):
             injected_data += "\n[Tip: usa file_info con la ruta completa]\n"
 
-        history = self.memory.get_conversation_history(limit=10)
-
         if injected_data:
             user_content = f"{user_input}\n\n---\n{injected_data}"
             iter_extra = " (con datos inyectados)"
@@ -394,15 +484,11 @@ class AgentPiro:
             user_content = user_input
             iter_extra = ""
 
-        messages = []
-        if not history:
-            messages.append({
-                "role": "user",
-                "content": f"{system_prompt}\n\n{user_content}"
-            })
-        else:
-            messages.extend(history)
-            messages.append({"role": "user", "content": user_content})
+        history = self.memory.get_conversation_history()
+
+        messages = [{"role": "system", "content": system_prompt}]
+        messages.extend(history)
+        messages.append({"role": "user", "content": user_content})
 
         tools_schema = self.toolkit.get_all_tools()
         logger.debug(f"Tools schema enviado al modelo ({len(tools_schema)} tools): {[t['name'] for t in tools_schema]}")
@@ -429,6 +515,9 @@ class AgentPiro:
                 logger.agent_action("TOOL_EXECUTING", f"{tool_name} | iter {iteration}")
                 tool_result = self.toolkit.execute(tool_name, **tool_args)
 
+                self.memory.add_message("assistant", "", tool_calls=[tool_call])
+                self.memory.add_message("tool", tool_result)
+
                 messages.append({
                     "role": "assistant",
                     "content": "",
@@ -442,13 +531,39 @@ class AgentPiro:
                 continue
 
             if response.content:
-                self.memory.add_message("user", user_input)
+                self.memory.add_message("user", user_content)
                 self.memory.add_message("assistant", response.content)
                 logger.agent_action("RESPONSE", response.content[:100])
                 return response.content
 
         self.memory.add_message("assistant", "Alcancé el límite de iteraciones.")
         return "Necesito más tiempo para procesar tu solicitud. ¿Podrías reformularla?"
+
+    def summarize_context(self) -> str:
+        history = self.memory.get_conversation_history(limit=100)
+        if not history:
+            return "No hay historial que resumir."
+
+        history_text = ""
+        for msg in history:
+            role = msg["role"].upper()
+            content = msg["content"][:500]
+            history_text += f"[{role}]: {content}\n"
+
+        prompt = (
+            "Resume la siguiente conversación de forma factual y concisa. "
+            "Incluye solo hechos, preferencias del usuario, datos relevantes y tareas pendientes. "
+            "No añadas opiniones ni interpretaciones. El resumen será inyectado como contexto del sistema.\n\n"
+            f"{history_text}"
+        )
+
+        response = self.llm.chat([{"role": "user", "content": prompt}])
+        summary = response.content if response and response.content else "No se pudo generar resumen."
+
+        self.memory.save_fact("context_summary", summary)
+        self.memory.clear_conversation()
+        logger.agent_action("CONTEXT_SUMMARIZED", summary[:100])
+        return summary
 
     def clear_history(self):
         self.memory.clear_conversation()

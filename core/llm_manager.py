@@ -151,7 +151,10 @@ class AgentPrompt:
         time_str = now.strftime("%H:%M:%S")
         weekday = now.weekday()  # 0=lunes, 6=domingo
         dias = ["lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo"]
-        facts_text = "\n".join([f"- {k}: {v}" for k, v in facts.items()]) if facts else "Sin datos personales guardados."
+        context_summary = facts.get("context_summary")
+        other_facts = {k: v for k, v in facts.items() if k != "context_summary"}
+        facts_text = "\n".join([f"- {k}: {v}" for k, v in other_facts.items()]) if other_facts else "Sin datos personales guardados."
+        summary_section = f"\nCONTEXTO PREVIO (resumido):\n{context_summary}\n" if context_summary else ""
         return f"""
 Eres AgentPiro, un asistente personal de IA con acceso completo a Google Workspace mediante herramientas 'gog' para Gmail, Calendar, Drive, Docs, Sheets, Slides, Forms, Contacts, Tasks, YouTube, Photos, Chat, Classroom, People, Admin, Keep, Meet, Groups, Sites, Apps Script, Maps, Analytics y Search Console. Si la petición se puede cumplir usando estas herramientas, ÚSALAS SIEMPRE.
 
@@ -166,7 +169,7 @@ INFORMACIÓN DEL SISTEMA:
 
 PERFIL DEL USUARIO:
 {facts_text}
-
+{summary_section}
 HERRAMIENTAS GOOGLE DISPONIBLES:
 Correo: gog_gmail_search, gog_gmail_send
 Calendario: gog_calendar_events, gog_calendar_list, gog_calendar_create_event

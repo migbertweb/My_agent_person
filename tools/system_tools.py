@@ -116,13 +116,21 @@ def create_system_tools() -> Toolkit:
 
     # ── Filesystem ──
     toolkit.register(_r("search_files",
-        "Busca archivos por nombre/patrón en el sistema de archivos local (home)",
+        "Busca archivos por NOMBRE en el sistema local. Herramienta PRINCIPAL de búsqueda. Usa patrones glob: *.pdf, *reporte*, *curriculo*",
         {"type": "object", "properties": {
             "pattern": {"type": "string", "description": "Patrón de búsqueda (ej: '*.pdf', '*reporte*', 'foto*.jpg')"},
             "directory": {"type": "string", "description": "Directorio base (default: home)"},
             "max_results": {"type": "integer", "description": "Máximo de resultados (default 20)", "default": 20}},
          "required": ["pattern"]},
         lambda pattern, directory=None, max_results=20: filesystem_tools.search_files(pattern, directory, max_results)))
+    toolkit.register(_r("search_content",
+        "Busca texto DENTRO del contenido de archivos usando ripgrep. USO PRINCIPAL para encontrar archivos por su contenido.",
+        {"type": "object", "properties": {
+            "query": {"type": "string", "description": "Texto a buscar dentro del contenido de archivos"},
+            "directory": {"type": "string", "description": "Directorio base (default: home)"},
+            "max_results": {"type": "integer", "description": "Máximo de resultados (default 20)", "default": 20}},
+         "required": ["query"]},
+        lambda query, directory=None, max_results=20: filesystem_tools.search_content(query, directory, max_results)))
     toolkit.register(_r("open_file",
         "Abre un archivo o carpeta con la aplicación predeterminada del sistema",
         {"type": "object", "properties": {"path": {"type": "string", "description": "Ruta del archivo o carpeta"}}, "required": ["path"]},
@@ -163,6 +171,12 @@ def create_system_tools() -> Toolkit:
             "max_lines": {"type": "integer", "description": "Máximo de líneas a leer (default 50)", "default": 50}},
          "required": ["path"]},
         lambda path, max_lines=50: filesystem_tools.read_file(path, max_lines)))
+    toolkit.register(_r("extract_text",
+        "Extrae el texto completo de archivos: PDF (pdftotext), DOCX (python-docx), TXT y código fuente",
+        {"type": "object", "properties": {
+            "path": {"type": "string", "description": "Ruta al archivo (PDF, DOCX, TXT, código)"}},
+         "required": ["path"]},
+        lambda path: filesystem_tools.extract_text(path)))
 
     # ── Gog Gmail ──
     toolkit.register(_r("gog_gmail_search",
